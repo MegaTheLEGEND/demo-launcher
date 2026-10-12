@@ -1,0 +1,50 @@
+# Publishes ./site (a copy of the launcher's dist/web) to GitHub Pages, together with a same-origin
+# copy of every Craft app's latest web zip. GitHub's file servers send no CORS headers, so a web
+# page can only download those zips from its own address.
+#
+# One-time setup: Settings > Pages > Build and deployment > Source: "GitHub Actions".
+name: Deploy demo to Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+  schedule:
+    - cron: "17 */6 * * *"   # refresh the mirror so new app releases show up (runs on the default branch)
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check the site folder
+        run: |
+          test -f site/index.html || { echo "site/index.html is missing: copy the launcher's dist/web into site/"; exit 1; }
+          test -f site/sw.js || { echo "site/sw.js is missing: copy all of dist/web, not just index.html"; exit 1; }
+
+      - name: Mirror the apps' web zips into the site
+        run: bash tools/mirror.sh site
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+      - id: deployment
+        uses: actions/deploy-pages@v4
